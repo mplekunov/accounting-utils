@@ -1,0 +1,4 @@
+*.xlsx
+*.spec
+build/
+dist/
