@@ -135,15 +135,15 @@ def processDocuments(fs_file_path, ir_file_path, output_file_name):
 
     print("Converted files to Document objects...")
 
-    IR_documents_dict: Dict[str, Document] = {document.reference_number: document for document in IR_documents}
+    FS_documents_dict: Dict[str, Document] = {document.reference_number: document for document in FS_documents}
 
     output_documents: List[Tuple[Document, Optional[Document]]] = []
 
-    for FS_document in FS_documents:
-        IR_document = IR_documents_dict.get(FS_document.reference_number)
+    for IR_document in IR_documents:
+        FS_document = FS_documents_dict.get(IR_document.reference_number)
 
-        if IR_document is None:
-            output_documents.append((FS_document, None))
+        if FS_document is None:
+            output_documents.append((None, IR_document))
             continue
 
         if IR_document != FS_document:
@@ -166,31 +166,31 @@ def processDocuments(fs_file_path, ir_file_path, output_file_name):
         row_index = 0
         for FS_item, IR_item in data:
             row = {
-                f"FS Statement {reference_key}": FS_item.reference_number,
-                f"IR {reference_key}": IR_item.reference_number if IR_item is not None else "Not Found",
-                f"FS Statement {bill_date_key}": FS_item.bill_date,
-                f"IR {bill_date_key}": IR_item.bill_date if IR_item is not None else "Not Found",
-                f"FS Statement {amount_due_key}": format_as_currency(FS_item.amount_due),
-                f"IR {amount_due_key}": format_as_currency(IR_item.amount_due) if IR_item is not None else "Not Found",
-                f"FS Statement {bill_type_key}": document_bill_type_to_output_value_dict[FS_item.bill_type],
-                f"IR {bill_type_key}": document_bill_type_to_output_value_dict[IR_item.bill_type] if IR_item is not None else "Not Found",
+                f"Search Result {reference_key}": FS_item.reference_number if FS_item is not None else "Not Found",
+                f"IR Statement {reference_key}": IR_item.reference_number if IR_item is not None else "Not Found",
+                f"Search Result {bill_date_key}": FS_item.bill_date if FS_item is not None else "Not Found",
+                f"IR Statement {bill_date_key}": IR_item.bill_date if IR_item is not None else "Not Found",
+                f"Search Result {amount_due_key}": format_as_currency(FS_item.amount_due) if FS_item is not None else "Not Found",
+                f"IR Statement {amount_due_key}": format_as_currency(IR_item.amount_due) if IR_item is not None else "Not Found",
+                f"Search Result {bill_type_key}": document_bill_type_to_output_value_dict[FS_item.bill_type] if FS_item is not None else "Not Found",
+                f"IR Statement {bill_type_key}": document_bill_type_to_output_value_dict[IR_item.bill_type] if IR_item is not None else "Not Found",
             }
 
             rows.append(row)
 
-            if IR_item is None or IR_item.reference_number != FS_item.reference_number:
+            if FS_item is None or FS_item.reference_number != IR_item.reference_number:
                 indices.append((row_index, 0))
                 indices.append((row_index, 1))
 
-            if IR_item is None or IR_item.bill_date != FS_item.bill_date:
+            if FS_item is None or FS_item.bill_date != IR_item.bill_date:
                 indices.append((row_index, 2))
                 indices.append((row_index, 3))
 
-            if IR_item is None or IR_item.amount_due != FS_item.amount_due:
+            if FS_item is None or FS_item.amount_due != IR_item.amount_due:
                 indices.append((row_index, 4))
                 indices.append((row_index, 5))
             
-            if IR_item is None or IR_item.bill_type != FS_item.bill_type:
+            if FS_item is None or FS_item.bill_type != IR_item.bill_type:
                 indices.append((row_index, 6))
                 indices.append((row_index, 7))
 
