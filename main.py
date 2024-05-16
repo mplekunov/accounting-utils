@@ -4,6 +4,7 @@ from typing import Optional, Dict, List, Any, Tuple
 from datetime import date
 import sys
 import pandas as pd
+import numpy as np
 from enum import Enum
 from dateutil.parser import parse
 import openpyxl
@@ -49,13 +50,15 @@ class Document:
         if not isinstance(__value, Document):
             return False  # Not the same type, can't be equal 
 
-
         return (
                 self.reference_number == __value.reference_number and 
                 self.bill_date == __value.bill_date and 
                 self.amount_due == __value.amount_due and
                 self.bill_type == __value.bill_type
             )
+    
+    def __hash__(self) -> int:
+        return hash((self.bill_date, self.amount_due, self.bill_type, self.reference_number))
 
 def getPath(root_path: str, file_name_pattern: str) -> Optional[str]:
     for filename in os.listdir(root_path): 
@@ -135,19 +138,61 @@ def processDocuments(fs_file_path, ir_file_path, output_file_name):
 
     print("Converted files to Document objects...")
 
-    FS_documents_dict: Dict[str, Document] = {document.reference_number: document for document in FS_documents}
+    def combine_documents(documents: List[Document]) -> List[Document]:
+        normalized_documents = []
+
+        processed = set()
+
+        for i in range(len(documents)):
+            document = documents[i]
+
+            if document in processed:
+                continue
+
+            for j in range(i + 1, len(documents)):
+                cur_document = documents[j]
+
+                if document.bill_date == cur_document.bill_date and document.bill_type == cur_document.bill_type and  document.reference_number == cur_document.reference_number:
+                    document.amount_due = document.amount_due + cur_document.amount_due
+
+                    processed.add(cur_document)
+
+            processed.add(document)
+
+            document.amount_due = np.round(document.amount_due, 2)
+            normalized_documents.append(document)
+
+        return normalized_documents
+
+    # {document.reference_number : document for document in FS_documents}
+    FS_documents_dict: Dict[str, List[Document]] = dict()
+
+    for document in FS_documents:
+        if document.reference_number not in FS_documents_dict:
+            FS_documents_dict[document.reference_number] = []
+
+        FS_documents_dict[document.reference_number].append(document)
+
+    for key, documents in FS_documents_dict.items():
+        FS_documents_dict[key] = combine_documents(documents)
 
     output_documents: List[Tuple[Document, Optional[Document]]] = []
 
     for IR_document in IR_documents:
-        FS_document = FS_documents_dict.get(IR_document.reference_number)
+        FS_documents = FS_documents_dict.get(IR_document.reference_number)
 
-        if FS_document is None:
+        # IF FS_documents doesn't have ANY documents to compare, it will be NONE
+        if not FS_documents:
             output_documents.append((None, IR_document))
             continue
-
-        if IR_document != FS_document:
-            output_documents.append((FS_document, IR_document))
+        else:
+            # There are multiple "unique" documents
+            # Uniqness defines by all parameters aside from reference_number
+            
+            for FS_document in FS_documents:
+                if IR_document != FS_document:
+                    output_documents.append((FS_document, IR_document))
+    
 
     print("Found differences...")
 
@@ -155,9 +200,6 @@ def processDocuments(fs_file_path, ir_file_path, output_file_name):
     bill_date_key = document_column_to_output_key_dict[DocumentColumns.BILL_DATE]
     amount_due_key = document_column_to_output_key_dict[DocumentColumns.AMOUNT_DUE]
     bill_type_key = document_column_to_output_key_dict[DocumentColumns.BILL_TYPE]
-
-    def format_as_currency(number: float) -> float:
-        return locale.format_string('%.2f', number, grouping=True)
 
     def transform_data(data: List[Tuple[Document, Optional[Document]]]) -> Tuple[List[Tuple[int, int]], List[Dict[str, Any]]]:
         rows = []
@@ -170,8 +212,8 @@ def processDocuments(fs_file_path, ir_file_path, output_file_name):
                 f"IR Statement {reference_key}": IR_item.reference_number if IR_item is not None else "Not Found",
                 f"Search Result {bill_date_key}": FS_item.bill_date if FS_item is not None else "Not Found",
                 f"IR Statement {bill_date_key}": IR_item.bill_date if IR_item is not None else "Not Found",
-                f"Search Result {amount_due_key}": format_as_currency(FS_item.amount_due) if FS_item is not None else "Not Found",
-                f"IR Statement {amount_due_key}": format_as_currency(IR_item.amount_due) if IR_item is not None else "Not Found",
+                f"Search Result {amount_due_key}": FS_item.amount_due if FS_item is not None else "Not Found",
+                f"IR Statement {amount_due_key}": IR_item.amount_due if IR_item is not None else "Not Found",
                 f"Search Result {bill_type_key}": document_bill_type_to_output_value_dict[FS_item.bill_type] if FS_item is not None else "Not Found",
                 f"IR Statement {bill_type_key}": document_bill_type_to_output_value_dict[IR_item.bill_type] if IR_item is not None else "Not Found",
             }
@@ -225,6 +267,14 @@ def processDocuments(fs_file_path, ir_file_path, output_file_name):
     output_data_frame.to_excel(f"{output_file_name}.xlsx", index=False)  
     
     print("Created excel document with differences...")
+
+    def add_filter_to_column(worksheet, column_letter):
+        max_row = worksheet.max_row
+        min_row = worksheet.min_row
+
+        filter_range = f"{column_letter}{min_row}:{column_letter}{max_row}"
+
+        worksheet.auto_filter.ref = filter_range
     
     def highlight_cells_in_excel(worksheet, cell_references, color_rgb: str):
         for cell in cell_references:
@@ -257,6 +307,7 @@ def processDocuments(fs_file_path, ir_file_path, output_file_name):
     highlight_cells_in_excel(worksheet, cell_references, "FF0000")
     auto_with_adjusting_in_excel(worksheet)
     center_alignment_in_excel(worksheet)
+    add_filter_to_column(worksheet, "D")
 
     print("Formated excel document with differences...")
 
